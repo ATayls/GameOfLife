@@ -2,7 +2,7 @@ import pygame
 import numpy as np
 import sys
 from functools import reduce
-
+from scipy.signal import convolve2d
 
 class Game:
     def __init__(self, elements, windowed=False):
@@ -34,66 +34,66 @@ class Game:
 
     @staticmethod
     def factors(n):
+        """
+        Calculate factors of integer n
+        :param n: Integer
+        :return:
+        """
         return set(reduce(list.__add__,
                           ([i, n // i] for i in range(1, int(n ** 0.5) + 1) if n % i == 0)))
 
-    @staticmethod
-    def get_num_neighbours(grid, row, col):
-        num_neighbours = 0
-        grid_shp = np.shape(grid)
-        for i in range(-1, 2):
-            for j in range(-1, 2):
-                n_row = row + i
-                n_col = col + j
+    def evolve(self,grid):
+        """
+        Evaluate grid following Conways GOL rules.
+        Implemented using Scipy convolutions for speed efficiency
+        :param grid: ndarray
+        :return: ndarray
+        """
+        # create number of neighbours array 'neighbourhood'
+        in_shp = np.shape(grid)
+        kernal = np.array([
+            [1, 1, 1],
+            [1, 0, 1],
+            [1, 1, 1],
+        ])
+        conv_grid = convolve2d(grid,kernal,boundary='fill',fillvalue=0)
+        neighbourhood = conv_grid[1:in_shp[0]+1,1:in_shp[1]+1]
 
-                if (i == 0) and (j == 0):
-                    continue
-                elif (n_row < 0) or (n_row >= grid_shp[0]):
-                    N_val = 0
-                elif (n_col < 0) or (n_col >= grid_shp[1]):
-                    N_val = 0
-                else:
-                    N_val = grid[n_row][n_col]
-
-                num_neighbours += N_val
-
-        return num_neighbours
-
-    def evolve(self, grid):
-        #todo implement faster method
-        cell_number = 0
+        # initialise empty grid
         new_state = np.zeros_like(grid)
-        for row in range(self.X_blocks):
-            for col in range(self.Y_blocks):
-                NN = self.get_num_neighbours(grid, row, col)
 
-                alive = grid[row][col]
-
-                # If a cell is OFF and has exactly three neighbors that are ON, it turns ON.
-                if not alive and NN == 3:
-                    new_state[row][col] = 1
-                # If a cell is ON and has either two or three neighbors that are ON, it remains ON
-                if alive and (NN == 3 or NN == 2):
-                    new_state[row][col] = 1
-                # If a cell is ON and has fewer than two neighbors that are ON, it turns OFF.
-                if alive and NN < 2:
-                    new_state[row][col] = 0
-                # If a cell is ON and has more than three neighbors that are ON, it turns OFF.
-                if alive and NN > 3:
-                    new_state[row][col] = 0
-
-                cell_number += 1
+        # If a cell is OFF and has exactly three neighbors that are ON, it turns ON.
+        new_state[np.where((neighbourhood == 3) & (grid == 0))] = 1
+        # If a cell is ON and has either two or three neighbors that are ON, it remains ON
+        new_state[np.where((neighbourhood == 2) & (grid == 1))] = 1
+        new_state[np.where((neighbourhood == 3) & (grid == 1))] = 1
+        # If a cell is ON and has fewer than two neighbors that are ON, it turns OFF.
+        new_state[np.where((neighbourhood < 2) & (grid == 1))] = 0
+        # If a cell is ON and has more than three neighbors that are ON, it turns OFF.
+        new_state[np.where((neighbourhood > 3) & (grid == 1))] = 0
 
         return new_state
 
 
     def calculate_x_y_blocks(self):
+        """
+        Calculate grid size in blocks closest to given number of elements
+        :return:
+        """
+        # Desired number of elements
         elements = self.elements
+
+        # Get factors of x and y window resolution
         factorsX = self.factors(self.xmax)
         factorsY = self.factors(self.ymax)
 
+        # Find common factors
         C_factors = list(set(factorsX) & set(factorsY))
+
+        #todo if no common factors
         if C_factors:
+
+            # Create a dictionary of every possible number of elements that fits window size
             poss_elements = {}
             for i in C_factors:
                 X_blocks = self.xmax / i
@@ -103,9 +103,11 @@ class Game:
                     poss_elements[element_n] = []
                 poss_elements[element_n].append([int(i), int(X_blocks), int(Y_blocks)])
 
+            # find closest number of elements to input
             closest_el = min(poss_elements.keys(), key=lambda x:abs(x-elements))
             print('Number of elements set to ', closest_el)
 
+            # set class attributes
             self.X_block_size = poss_elements[closest_el][0][0]
             self.Y_block_size = poss_elements[closest_el][0][0]
             self.X_blocks = poss_elements[closest_el][0][1]
@@ -113,6 +115,10 @@ class Game:
 
 
     def handleInputEvents(self):
+        """
+        Pygame event handler
+        :return:
+        """
         for event in pygame.event.get():
             #QUIT
             if (event.type == pygame.QUIT):  # pygame issues a quit event, for e.g. by closing the window
@@ -121,22 +127,27 @@ class Game:
 
             #Keyboard
             if (event.type == pygame.KEYDOWN):
+                # New random world: key = N
                 if event.key == pygame.K_n:
                     self.start = False
                     self.save = None
                     self.world = self.make_random_grid(self.X_blocks, self.Y_blocks)
+                # Save world: key = S
                 if event.key == pygame.K_s:
                     self.save = self.world
+                # Reset to Saved world: key = R
                 if event.key == pygame.K_r:
                     self.start = False
                     if not self.save is None:
                         self.world = self.save
+                # Start / Pause game: key = Space
                 if event.key == pygame.K_SPACE:
                     if self.start == False:
                         self.start = True
                     elif self.start == True:
                         self.start = False
-                if event.key == pygame.K_b:
+                # Clear : key = C
+                if event.key == pygame.K_c:
                     self.start = False
                     self.save = None
                     self.world = np.zeros_like(self.world)
@@ -146,7 +157,11 @@ class Game:
 
 
     def createScreen(self):
-        print('available resolutions', pygame.display.list_modes(0))
+        """
+        Initialise pygame screen
+        :return:
+        """
+        print('Available resolutions', pygame.display.list_modes(0))
 
         if not self.windowed:
             # the next two lines set up full screen options, to run in a window see below
@@ -155,7 +170,7 @@ class Game:
             options = pygame.FULLSCREEN | pygame.HWSURFACE | pygame.DOUBLEBUF
         else:
             screen_width, screen_height = (600,600)
-            options=0
+            options = 0
 
         # create the screen with the options
         screen = pygame.display.set_mode((screen_width, screen_height), options)
@@ -166,6 +181,13 @@ class Game:
 
 
     def draw_block(self,x,y,cell_color):
+        """
+        Draw a grid block in given colour to screen
+        :param x: grid x pos
+        :param y: grid y pos
+        :param cell_color: rgb colour
+        :return:
+        """
         x *= self.X_block_size
         y *= self.Y_block_size
         pygame.draw.rect(screen, cell_color,
@@ -173,12 +195,22 @@ class Game:
 
 
     def pixel2block(self,x,y):
+        """
+        Convert a pixel x,y coord to containing block
+        :param x:
+        :param y:
+        :return:
+        """
         x_block = int((x+1)/self.X_block_size)
         y_block = int((y+1)/self.Y_block_size)
         return x_block, y_block
 
 
     def draw_grid(self):
+        """
+        Draw world grid to screen
+        :return:
+        """
         cell_number = 0
         for x in range(self.X_blocks):
             for y in range(self.Y_blocks):
@@ -189,6 +221,10 @@ class Game:
 
 
     def run_game(self):
+        """
+        Game loop
+        :return:
+        """
         pygame.init()
         clock = pygame.time.Clock()
 
@@ -203,7 +239,7 @@ class Game:
         while True:
             self.handleInputEvents()
             pygame.display.update()
-            clock.tick(10)
+            clock.tick(60)
             if self.start:
                 if self.save is None:
                     self.save = self.world
@@ -213,6 +249,12 @@ class Game:
 
 
 if __name__ == '__main__':
+
+    # New random world: key = N
+    # Save world: key = S
+    # Reset to Saved world: key = R
+    # Start / Pause game: key = Space
+    # Clear : key = C
 
     G = Game(20000, windowed=True)
     G.run_game()
