@@ -15,6 +15,7 @@ class Game:
         self.elements = elements
 
         self.start = False
+        self.drawing = False
         self.erase = False
         self.save = None
 
@@ -124,6 +125,28 @@ class Game:
             if (event.type == pygame.QUIT):  # pygame issues a quit event, for e.g. by closing the window
                 print("quitting")
                 sys.exit(0)
+
+            #drawing
+            elif event.type == pygame.MOUSEBUTTONUP:
+                if event.button == 1: # left click
+                    self.drawing = False
+                elif event.button == 3: #right click:
+                    self.erase = False
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                self.start = False
+                if event.button == 1: # left click
+                    self.drawing = True
+                elif event.button == 3: #right click:
+                    self.erase = True
+            elif event.type == pygame.MOUSEMOTION:
+                if self.drawing:
+                    mouse_position = pygame.mouse.get_pos()
+                    x, y = self.pixel2block(mouse_position[0],mouse_position[1])
+                    self.world[x][y] = 1
+                elif self.erase:
+                    mouse_position = pygame.mouse.get_pos()
+                    x, y = self.pixel2block(mouse_position[0],mouse_position[1])
+                    self.world[x][y] = 0
 
             #Keyboard
             if (event.type == pygame.KEYDOWN):
